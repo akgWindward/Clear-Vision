@@ -18,7 +18,8 @@ class Scraper:
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         self.driver = webdriver.Chrome(options=options)
-
+        
+    # This method scrolles the browser page to load enough images
     def scroll_down(self, target_count = 100 , scroll_pause_time=2, max_scrolls=8):
         seen_urls = set()
         last_height = self.driver.execute_script("return document.body.scrollHeight")
@@ -40,6 +41,7 @@ class Scraper:
             if len(seen_urls) >= target_count:
                 break
 
+    # This method returns the urls of loaded images which are atleast 128*128
     def scrape_all_images(self):
         try:
             images = self.driver.find_elements(By.TAG_NAME, 'img')
@@ -56,6 +58,7 @@ class Scraper:
             print(f"Error scraping images: {e}")
             return []
 
+    # This method downloads the image by its url and saves it inside the data_path specified
     def save_image(self, image_url, file_name, retry_count=3):
         try:
             file_path = os.path.join(self.data_path, f"{file_name}.jpg")
@@ -78,6 +81,8 @@ class Scraper:
         except Exception as e:
             print(f"Error saving image {file_name}: {e}")
 
+
+    # This is the main method which automates the whole process and scrapes and save the num images into the data_path
     def scrape_and_save_images(self):
         os.makedirs(self.data_path , exist_ok=True)
 
