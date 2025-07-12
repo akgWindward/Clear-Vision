@@ -94,32 +94,32 @@ class ImageDegrador:
         #Applies Isotropic Gaussian Blurr
         
         c,h,w = image.shape
-        
-        
         sigma_iso = random.uniform(*self.iso_sigma)
-        iso_kernel = self.kernel_iso(self.kernel_size , sigma_iso , sigma_iso)
+        kernel = self.kernel_iso(self.kernel_size , sigma_iso , sigma_iso)
 
         padding = F.pad(image.unsqueeze(0) , (self.kernel_size // 2 , ) *4 , mode='reflect')
         
-        iso_kernel = iso_kernel.expand(c , 1, self.kernel_size , self.kernel_size).to(image.device)
-        padding = F.conv2d(padding, iso_kernel, groups=c)
-        print("completed ISO")
-        return padding.squeeze(0)
+        # For depthwise convolution
+        kernel = kernel.expand(c , 1, self.kernel_size , self.kernel_size).to(image.device)
+        
+        final = F.conv2d(padding, kernel, groups=c)
+        return final.squeeze(0)
 
     def B_aniso(self, image: torch.Tensor) -> torch.Tensor:
+        # Applies anisotropic Gaussian blur
+        
         c, h, w = image.shape
-        kernel_size = min(self.kernel_size,  h , w)  # Make sure this is set before calling this function
+        kernel_size = min(self.kernel_size,  h , w)
         
         if kernel_size % 2 == 0:
             kernel_size -=1        
-            
-
+        
         sigma_anisoX = random.uniform(*self.aniso_sigma)
         sigma_anisoY = random.uniform(*self.aniso_sigma)
         rot = random.uniform(0, math.pi)
 
         kernel = self.kernel_aniso(kernel_size, sigma_anisoX, sigma_anisoY, torch.tensor(rot))
-        print(f"Input shape: {image.shape}, Kernel shape: {kernel.shape}")
+        # print(f"Input shape: {image.shape}, Kernel shape: {kernel.shape}")
 
         kernel = kernel.to(dtype=torch.float32, device=image.device)  
         kernel = kernel.expand(c, 1, kernel_size, kernel_size)        
@@ -129,17 +129,17 @@ class ImageDegrador:
         padding = kernel_size // 2
         image = F.pad(image, (padding, padding, padding, padding), mode='reflect')
 
-        out = F.conv2d(image, kernel, groups=c)
-        print(f"Completed ANISO")
-
-        return out.squeeze(0) 
+        final = F.conv2d(image, kernel, groups=c)
+        return final.squeeze(0) 
 
     
     def N_guass(self , image: torch.Tensor) -> torch.Tensor:
         sigma = random.uniform(1/255 , 3/255)
+        if not isinstance(image, torch.Tensor):
+            image = transforms.ToTensor()(image)
         c,h,w = image.shape
-        image = transforms.ToTensor()(image)
-        noise_type = random.choices(['gen' , 'channel' , 'gs'] , weights = [0.2 , 0.4 , 0.4])[0]
+        
+        noise_type = random.choices(['general' , 'channel' , 'grayscale'] , weights = [0.2 , 0.4 , 0.4])[0]
         noise = torch.empty((c, h, w) , device=self.device)
         if noise_type == 'general':
             noise = torch.randn((c, h, w), device=self.device) * sigma
@@ -148,8 +148,9 @@ class ImageDegrador:
         elif noise_type == 'grayscale':
             gray_noise = torch.randn((1, h, w), device=self.device) * sigma
             noise = gray_noise.repeat(c, 1, 1)
+            
         noisy_guass_image = torch.clamp(image + noise , 0.0 , 1.0)
-        print("completed GUASS BLURR")
+        # print("completed GUASS BLURR")
         return noisy_guass_image
 
     
@@ -164,11 +165,11 @@ class ImageDegrador:
         
         jpeg_img = Image.open(buffer)
         jpeg_tensor = to_tensor(jpeg_img)
-        print("completed JPEG COMPRESSION")
+        # print("completed JPEG COMPRESSION")
         return jpeg_tensor
     
-    # These Two Resize Operations won't be used because they are not as efficient But these are some
-    # of my interpretation of resizing
+    # These Two Resize Operations won't be used because they are not as efficient
+    # But these are some of my interpretation of resizing
     def resize_images(self):
         self.target_width = 128
         self.target_height = 128
@@ -177,7 +178,8 @@ class ImageDegrador:
             image = cv2.imread(filepath)
             resized_image = cv2.resize(image , (self.img_width , self.img_height) ,interpolation=cv2.INTER_AREA)
             self.resized_images.append(resized_image)
-            
+
+    # Used for resizing
     def Ds(self , image : Image) -> torch.Tensor:
             self.target_width = 128
             self.target_height = 128
@@ -193,27 +195,28 @@ class ImageDegrador:
             
             resized_tensor = size_transform(image)
             return resized_tensor
-        
+
+    # Degrades the image by applying 2-4 degrading functions
     def degrade(self , img : torch.Tensor) -> torch.Tensor:
         ops = [self.B_iso , self.B_aniso , self.N_guass , self.N_jpeg]
         
         op_selected = random.sample(ops , k= random.randint(2 , len(ops)))
         random.shuffle(op_selected)
-        print("Applied degradations:", [op.__name__ for op in op_selected])
+        # print("Applied degradations:", [op.__name__ for op in op_selected])
         
         for op in op_selected:
-            print(f"Applying {op.__name__}")
+            # print(f"Applying {op.__name__}")
             if(op.__name__ == "B_aniso"):
                 try:
                     img = self.B_aniso(image=img)
                 except Exception as e:
-                    print(f"B_aniso failed: {e}. Using B_iso instead.")
+                    # print(f"B_aniso failed: {e}. Using B_iso instead.")
                     img = self.B_iso(image=img)    
             else:
                 img = op(img)
             if img is None:
                 raise ValueError(f"{op.__name__} returned None")
-        print(img.shape)
+        # print(img.shape)
         return img
     
     def save_degraded_images(self , max_workers = os.cpu_count()):
